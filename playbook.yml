@@ -1,0 +1,189 @@
+---
+- hosts: all
+  become: true
+  become_method: sudo
+  become_user: root
+
+  pre_tasks:
+   - name: "Install PIP"
+     ansible.builtin.apt: name=pip state=present
+   - name: "Install Python packages"
+     pip: "name={{ item }}  state=present"
+     with_items:
+      - psycopg2-binary
+      - pymysql
+  tasks:
+   - name: Packages and Libraries
+     ansible.builtin.apt:
+      name:
+        - acl
+        - ruby
+        - ruby-dev
+        - libruby
+        - mysql-server
+        - postgresql
+        - postgresql-contrib
+        - g++
+        - curl
+        - build-essential
+        - libxml2
+        - libxml2-dev
+        - libxslt1-dev
+        - libpq-dev
+        - libmagick++-dev
+        - nodejs
+        - libsqlite3-dev
+      state: present
+   - name: Install Bundler
+     community.general.gem:
+      name: bundler
+      state: latest
+      user_install: false
+   - name: "Mailcatcher: install gem"
+     community.general.gem:
+      name: mailcatcher
+      state: latest
+      user_install: false
+   - name: "Mailcatcher: install service file"
+     copy:
+      dest: "/lib/systemd/system/mailcatcher.service"
+      content: |
+        [Unit]
+        Description=Job that runs the mailcatcher daemon
+        After=network.target
+        After=systemd-user-sessions.service
+
+        [Service]
+        Type=simple
+        Restart=on-failure
+        User=vagrant
+        ExecStart=/usr/local/bin/mailcatcher --foreground --smtp-ip 0.0.0.0 --ip 0.0.0.0
+        [Install]
+        WantedBy=multi-user.target
+   - name: "Mailcatcher: enable service"
+     ansible.builtin.systemd:
+      name: mailcatcher
+      enabled: yes
+   - name: "Mailcatcher: start service"
+     ansible.builtin.systemd:
+      name: mailcatcher
+      state: started
+   - name: "Mailcatcher: reload systemd"
+     ansible.builtin.systemd:
+      daemon_reload: yes
+  #  - name: Set password for root user
+  #    mysql_user:
+  #     name: root
+  #     password: 123
+  #     priv: '*.*:ALL,GRANT'
+  #     host: 'localhost'
+  #     login_unix_socket: /var/run/mysqld/mysqld.sock
+  #     state: present
+  #  - name: Save root password in .my.cnf
+  #    copy:
+  #     dest: /root/.my.cnf
+  #     owner: root
+  #     mode: '0600'
+  #     content: |
+  #       [client]
+  #       user=root
+  #       password=123
+   - name: "MySQL: Create development and test databases"
+     community.mysql.mysql_db:
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+      name:
+        - development
+        - test
+      state: present
+   - name: "MySQL: Create devuser"
+     community.mysql.mysql_user:
+       login_unix_socket: /var/run/mysqld/mysqld.sock
+       name: 'devuser'
+       password: 'devpassword'
+       priv: '*.*:SUPER'
+       host: '%'
+       state: present
+   - name: "MySQL: Create testuser"
+     community.mysql.mysql_user:
+       login_unix_socket: /var/run/mysqld/mysqld.sock
+       name: testuser
+       password: testpassword
+       priv: '*.*:SUPER'
+       host: '%'
+       state: present
+   - name: "MySQL: Set config to bind to all networks"
+     lineinfile: dest=/etc/mysql/mysql.conf.d/mysqld.cnf regexp="bind-address =" line="bind-address = 0.0.0.0" state=present
+     notify: restart mysql
+   - name: "PostgreSQL: Create development database"
+     postgresql_db: state=present name="development"
+     become: true
+     become_user: postgres
+   - name: "PostgreSQL: Create devuser"
+     postgresql_user:
+      state: present
+      name: "devuser"
+      password: "devpassword"
+     become: true
+     become_user: postgres
+   - name: "PostgreSQL: Grant devuser access to development db"
+     postgresql_privs:
+      type: database
+      database: development
+      roles: devuser
+      grant_option: no
+      privs: all
+     become: true
+     become_user: postgres
+   - name: "PostgreSQL: Allow md5 connections for devuser"
+     postgresql_pg_hba:
+      dest: "/etc/postgresql/14/main/pg_hba.conf"
+      contype: host
+      databases: all
+      address: all
+      method: md5
+      users: devuser
+      create: true
+     become: true
+     become_user: postgres
+     notify: restart postgres
+   - name: "PostgreSQL: Create test database"
+     postgresql_db: state=present name="test"
+     become: true
+     become_user: postgres
+   - name: "PostgreSQL: Create testuser"
+     postgresql_user:
+      state: present
+      name: "testuser"
+      password: "testpassword"
+     become: true
+     become_user: postgres
+   - name: "PostgreSQL: Grant testuser access to test db"
+     postgresql_privs:
+      type: database
+      database: test
+      roles: testuser
+      grant_option: no
+      privs: all
+     become: true
+     become_user: postgres
+   - name: "PostgreSQL: Allow md5 connections for testuser"
+     postgresql_pg_hba:
+      dest: "/etc/postgresql/14/main/pg_hba.conf"
+      contype: host
+      databases: all
+      address: all
+      method: md5
+      users: testuser
+      create: true
+     become: true
+     become_user: postgres
+     notify: restart postgres
+   - name: Configure PostgreSQL. Set listen_addresses.
+     lineinfile: dest=/etc/postgresql/14/main/postgresql.conf regexp="listen_addresses =" line="listen_addresses = '*'" state=present
+     notify: restart postgres
+  handlers:
+   - name: restart postgres
+     service: name=postgresql state=restarted
+   - name: restart mysql
+     service: name=mysql state=restarted
+...

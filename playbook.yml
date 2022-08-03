@@ -5,6 +5,10 @@
   become_user: root
 
   pre_tasks:
+   - name: Pre-install libpq-dev
+     ansible.builtin.apt:
+      name:
+        - libpq-dev
    - name: "Install PIP"
      ansible.builtin.apt: name=pip state=present
    - name: "Install Python packages"
@@ -12,10 +16,12 @@
      with_items:
       - psycopg2-binary
       - pymysql
+
   tasks:
    - name: Packages and Libraries
      ansible.builtin.apt:
       name:
+        - python2
         - acl
         - ruby
         - ruby-dev
@@ -33,6 +39,7 @@
         - libmagick++-dev
         - nodejs
         - libsqlite3-dev
+        - libmysqlclient-dev
       state: present
    - name: Install Bundler
      community.general.gem:
@@ -71,23 +78,6 @@
    - name: "Mailcatcher: reload systemd"
      ansible.builtin.systemd:
       daemon_reload: yes
-  #  - name: Set password for root user
-  #    mysql_user:
-  #     name: root
-  #     password: 123
-  #     priv: '*.*:ALL,GRANT'
-  #     host: 'localhost'
-  #     login_unix_socket: /var/run/mysqld/mysqld.sock
-  #     state: present
-  #  - name: Save root password in .my.cnf
-  #    copy:
-  #     dest: /root/.my.cnf
-  #     owner: root
-  #     mode: '0600'
-  #     content: |
-  #       [client]
-  #       user=root
-  #       password=123
    - name: "MySQL: Create development and test databases"
      community.mysql.mysql_db:
       login_unix_socket: /var/run/mysqld/mysqld.sock
@@ -118,6 +108,11 @@
      postgresql_db: state=present name="development"
      become: true
      become_user: postgres
+   - name: "PostgreSQL: Detect installed version"
+     shell: |
+      psql --version | grep -oP '(?<=\) )[0-9]{1,}(?=.)'
+     register: installed_pg_version
+     ignore_errors: true
    - name: "PostgreSQL: Create devuser"
      postgresql_user:
       state: present
@@ -136,7 +131,7 @@
      become_user: postgres
    - name: "PostgreSQL: Allow md5 connections for devuser"
      postgresql_pg_hba:
-      dest: "/etc/postgresql/14/main/pg_hba.conf"
+      dest: "/etc/postgresql/{{installed_pg_version.stdout_lines[0]}}/main/pg_hba.conf"
       contype: host
       databases: all
       address: all
@@ -168,7 +163,7 @@
      become_user: postgres
    - name: "PostgreSQL: Allow md5 connections for testuser"
      postgresql_pg_hba:
-      dest: "/etc/postgresql/14/main/pg_hba.conf"
+      dest: "/etc/postgresql/{{installed_pg_version.stdout_lines[0]}}/main/pg_hba.conf"
       contype: host
       databases: all
       address: all
@@ -179,7 +174,7 @@
      become_user: postgres
      notify: restart postgres
    - name: Configure PostgreSQL. Set listen_addresses.
-     lineinfile: dest=/etc/postgresql/14/main/postgresql.conf regexp="listen_addresses =" line="listen_addresses = '*'" state=present
+     lineinfile: dest=/etc/postgresql/{{installed_pg_version.stdout_lines[0]}}/main/postgresql.conf regexp="listen_addresses =" line="listen_addresses = '*'" state=present
      notify: restart postgres
   handlers:
    - name: restart postgres

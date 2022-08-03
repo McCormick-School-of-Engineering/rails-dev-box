@@ -2,12 +2,12 @@ Vagrant.configure("2") do |config|
 
   arch = ENV['ARCH'] || ''
   if arch == ''
-    config.vm.box = 'bento/ubuntu-22.04'
+    config.vm.box = 'bento/ubuntu-20.04'
   else
     config.vm.box = 'bento/ubuntu-20.04-arm64'
   end
   
-  config.vm.provision "ansible_local" do |ansible|
+  config.vm.provision "ansible_local", run: "always" do |ansible|
     ansible.playbook = "playbook.yml"
   end
 

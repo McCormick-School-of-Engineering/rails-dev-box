@@ -90,7 +90,7 @@
        login_unix_socket: /var/run/mysqld/mysqld.sock
        name: 'devuser'
        password: 'devpassword'
-       priv: '*.*:SUPER'
+       priv: '*.*:ALL'
        host: '%'
        state: present
    - name: "MySQL: Create testuser"
@@ -98,7 +98,7 @@
        login_unix_socket: /var/run/mysqld/mysqld.sock
        name: testuser
        password: testpassword
-       priv: '*.*:SUPER'
+       priv: '*.*:ALL'
        host: '%'
        state: present
    - name: "MySQL: Set config to bind to all networks"
